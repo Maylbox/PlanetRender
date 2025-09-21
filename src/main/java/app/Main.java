@@ -13,17 +13,16 @@ import static org.lwjgl.opengl.GL20.*;
 public class Main {
 
     // Follow/orbit state
-    private boolean prevO = false;   // edge detection for 'O'
-    private boolean prevT = false;   // edge detection for 'T'
-    private float orbitAzimuthDeg = -90f;    // yaw around planet
-    private float orbitElevationDeg = 0f;    // pitch around planet
+    private boolean prevO = false;
+    private boolean prevT = false;
+    private float orbitAzimuthDeg = -90f;
+    private float orbitElevationDeg = 0f;
     private float orbitRadius = 3f;
 
-    // Orbit speeds
-    private static final float ORBIT_YAW_SPEED_DEG = 90f;     // A/D deg per second
-    private static final float ORBIT_ELEV_SPEED_DEG = 60f;    // Space/Ctrl deg per second
-    private static final float ORBIT_ZOOM_SPEED = 3f;         // W/S units per second
-    private static final float MOUSE_ORBIT_SENS = 0.12f;      // mouse X deg per pixel
+    private static final float ORBIT_YAW_SPEED_DEG = 90f;
+    private static final float ORBIT_ELEV_SPEED_DEG = 60f;
+    private static final float ORBIT_ZOOM_SPEED = 3f;
+    private static final float MOUSE_ORBIT_SENS = 0.12f;
 
     public static void main(String[] args) {
         new Main().run();
@@ -31,6 +30,7 @@ public class Main {
 
     private void run() {
         Camera cam = new Camera();
+
         // ---- Load JSON into PlanetConfig POJO ----
         engine.config.PlanetConfig cfg;
         try {
@@ -49,6 +49,7 @@ public class Main {
             cfg.spinDegPerSec = 45f;
             cfg.spinSignFree = -1;
             cfg.spinSignOrbit = +1;
+            // cfg.albedo can be left null to disable texturing by default
         }
 
         // Unpack config
@@ -67,27 +68,32 @@ public class Main {
         float angle = 0f;
 
         GLWindow win = new GLWindow(1280, 720, "PlanetRender - Bootstrap");
-        Mesh sphere = Mesh.uvSphere(64, 128, cfg.baseRadius /* or cfg.baseRadius */);
-
+        Mesh sphere = Mesh.uvSphere(64, 128, cfg.baseRadius);
 
         String vsrc = Resources.text("shaders/basic.vert");
         String fsrc = Resources.text("shaders/basic.frag");
         Shader shader = new Shader(vsrc, fsrc);
 
-
+        // -------- LOAD ALBEDO ONCE (from JSON path) --------
+        engine.gl.Texture albedo = null;
+        if (cfg.albedo != null && !cfg.albedo.isBlank()) {
+            try {
+                albedo = engine.gl.Texture.load(cfg.albedo);
+                System.out.println("Loaded albedo: " + cfg.albedo);
+            } catch (Exception e) {
+                System.err.println("Could not load albedo '" + cfg.albedo + "': " + e.getMessage());
+            }
+        }
+        // ----------------------------------------------------
 
         while (win.isOpen()) {
             long now = System.nanoTime();
             float dt = (now - last) / 1_000_000_000f;
             last = now;
 
-            // Pass center from config into input handler
             handleInput(win, cam, dt, minDist, maxDist, PCX, PCY, PCZ);
-
-            // Enforce distances using configured center
             enforceDistanceFromSphere(cam, PCX, PCY, PCZ, minDist, maxDist);
 
-            // Spin sign per mode from config
             int spinSign = cam.followTarget ? cfg.spinSignOrbit : cfg.spinSignFree;
             angle += cfg.spinDegPerSec * dt * spinSign;
 
@@ -112,6 +118,14 @@ public class Main {
             setVec3(shader.id(), "uLightColor", 1f, 1f, 1f);
             glUniform1f(glGetUniformLocation(shader.id(), "uLightIntensity"), 1.0f);
 
+            // texturing (no reload – just bind & set the sampler)
+            boolean useTex = (albedo != null);
+            glUniform1i(glGetUniformLocation(shader.id(), "uUseTexture"), useTex ? 1 : 0);
+            if (useTex) {
+                glUniform1i(glGetUniformLocation(shader.id(), "uAlbedo"), 0); // sampler to unit 0
+                albedo.bind(0);
+            }
+
             sphere.draw();
 
             win.swap();
@@ -120,6 +134,7 @@ public class Main {
 
         sphere.delete();
         shader.delete();
+        if (albedo != null) albedo.delete();
         win.destroy();
     }
 

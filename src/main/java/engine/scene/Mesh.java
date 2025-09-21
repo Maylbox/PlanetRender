@@ -56,73 +56,6 @@ public class Mesh {
         glDeleteVertexArrays(vao);
     }
 
-    // In engine.scene.Mesh
-    public static Mesh uvSphere(int stacks, int slices, float radius) {
-        // stacks: latitudes (>=2), slices: longitudes (>=3)
-        stacks = Math.max(2, stacks);
-        slices = Math.max(3, slices);
-
-        final int verts = (stacks + 1) * (slices + 1);
-        final float[] interleaved = new float[verts * 6]; // pos(3) + normal(3)
-
-        int vi = 0;
-        for (int i = 0; i <= stacks; i++) {
-            // phi in [-π/2 .. +π/2]  (south -> north)
-            float v = (float)i / stacks;
-            float phi = (float)(Math.PI * (v - 0.5f)); // -π/2 .. +π/2
-            float cp = (float)Math.cos(phi);
-            float sp = (float)Math.sin(phi);
-
-            for (int j = 0; j <= slices; j++) {
-                // theta in [0 .. 2π) around Y
-                float u = (float)j / slices;
-                float theta = (float)(u * Math.PI * 2.0);
-
-                float ct = (float)Math.cos(theta);
-                float st = (float)Math.sin(theta);
-
-                // unit sphere normal
-                float nx = cp * ct;
-                float ny = sp;
-                float nz = cp * st;
-
-                // position = normal * radius
-                float px = nx * radius;
-                float py = ny * radius;
-                float pz = nz * radius;
-
-                // interleave: pos then normal
-                interleaved[vi++] = px;
-                interleaved[vi++] = py;
-                interleaved[vi++] = pz;
-                interleaved[vi++] = nx;
-                interleaved[vi++] = ny;
-                interleaved[vi++] = nz;
-            }
-        }
-
-        // indices (two tris per quad), CCW winding
-        final int stride = slices + 1;
-        final int quads = stacks * slices;
-        int[] idx = new int[quads * 6];
-        int k = 0;
-        for (int i = 0; i < stacks; i++) {
-            for (int j = 0; j < slices; j++) {
-                int i0 = i * stride + j;
-                int i1 = i0 + 1;
-                int i2 = i0 + stride;
-                int i3 = i2 + 1;
-
-                // (i0, i2, i1) and (i1, i2, i3) => outward normals with default GL_CCW
-                idx[k++] = i0; idx[k++] = i2; idx[k++] = i1;
-                idx[k++] = i1; idx[k++] = i2; idx[k++] = i3;
-            }
-        }
-
-        return new Mesh(interleaved, idx);
-    }
-
-
     // A unit cube with normals
     public static Mesh cube() {
         // 24 unique verts (pos + normal per face) to keep crisp face normals
@@ -147,5 +80,102 @@ public class Mesh {
                 16,17,18, 16,18,19,  20,21,22, 20,22,23
         };
         return new Mesh(v, idx);
+    }
+    public Mesh(float[] interleaved, int[] indices, int strideFloats) {
+        vertexCount = indices.length;
+        vao = glGenVertexArrays();
+        vbo = glGenBuffers();
+        ebo = glGenBuffers();
+
+        glBindVertexArray(vao);
+
+        // VBO
+        FloatBuffer vb = memAllocFloat(interleaved.length);
+        vb.put(interleaved).flip();
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, vb, GL_STATIC_DRAW);
+        memFree(vb);
+
+        // EBO
+        IntBuffer ib = memAllocInt(indices.length);
+        ib.put(indices).flip();
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, ib, GL_STATIC_DRAW);
+        memFree(ib);
+
+        int strideBytes = strideFloats * Float.BYTES;
+
+        // layout(location=0) position
+        glVertexAttribPointer(0, 3, GL_FLOAT, false, strideBytes, 0L);
+        glEnableVertexAttribArray(0);
+
+        // layout(location=1) normal (assumes starts at float3)
+        glVertexAttribPointer(1, 3, GL_FLOAT, false, strideBytes, (long)(3 * Float.BYTES));
+        glEnableVertexAttribArray(1);
+
+        if (strideFloats >= 8) {
+            // layout(location=2) uv (assumes P(3) N(3) UV(2))
+            glVertexAttribPointer(2, 2, GL_FLOAT, false, strideBytes, (long)(6 * Float.BYTES));
+            glEnableVertexAttribArray(2);
+        }
+
+        glBindVertexArray(0);
+    }
+
+    // NEW: UV sphere with interleaved P(3), N(3), UV(2)
+    public static Mesh uvSphere(int stacks, int slices, float radius) {
+        stacks = Math.max(2, stacks);
+        slices = Math.max(3, slices);
+
+        int vertCount = (stacks + 1) * (slices + 1);
+        int idxCount  = stacks * slices * 6;
+
+        float[] v = new float[vertCount * 8]; // 3 pos + 3 norm + 2 uv
+        int[]   idx = new int[idxCount];
+
+        int vi = 0;
+        for (int i = 0; i <= stacks; i++) {
+            float vPct = (float)i / stacks;          // [0..1] top->bottom
+            float phi  = (float)Math.PI * vPct;      // [0..PI]
+            float y    = (float)Math.cos(phi);
+            float r    = (float)Math.sin(phi);
+
+            for (int j = 0; j <= slices; j++) {
+                float uPct = (float)j / slices;      // [0..1] around Y
+                float theta = (float)(uPct * Math.PI * 2.0); // [0..2PI]
+                float x = r * (float)Math.cos(theta);
+                float z = r * (float)Math.sin(theta);
+
+                // pos
+                v[vi++] = radius * x;
+                v[vi++] = radius * y;
+                v[vi++] = radius * z;
+
+                // normal (unit)
+                v[vi++] = x;
+                v[vi++] = y;
+                v[vi++] = z;
+
+                // uv (u right->left to match typical east-west; flip if needed)
+                v[vi++] = 1.0f - uPct;
+                v[vi++] = vPct;
+            }
+        }
+
+        int ii = 0;
+        for (int i = 0; i < stacks; i++) {
+            for (int j = 0; j < slices; j++) {
+                int a =  i      * (slices + 1) + j;
+                int b = (i + 1) * (slices + 1) + j;
+                int c =  a + 1;
+                int d =  b + 1;
+
+                // two tris per quad
+                idx[ii++] = a; idx[ii++] = b; idx[ii++] = c;
+                idx[ii++] = c; idx[ii++] = b; idx[ii++] = d;
+            }
+        }
+
+        return new Mesh(v, idx, 8);
     }
 }

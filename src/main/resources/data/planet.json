@@ -8,5 +8,7 @@
 
   "spinDegPerSec": 45.0,
   "spinSignFree": -1,
-  "spinSignOrbit": 1
+  "spinSignOrbit": -1,
+
+  "albedo": "assets/textures/earth.jpg"
 }
