@@ -157,7 +157,7 @@ public class Mesh {
                 v[vi++] = z;
 
                 // uv (u right->left to match typical east-west; flip if needed)
-                v[vi++] = 1.0f - uPct;
+                v[vi++] = uPct;
                 v[vi++] = vPct;
             }
         }
