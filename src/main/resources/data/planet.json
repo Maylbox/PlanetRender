@@ -14,7 +14,7 @@
 
   "atmosphere": {
     "enabled": true,
-    "thicknessPct": 0.02,
+    "thicknessPct": 0.07,
     "intensity": 2,
     "power": 3.5,
     "color": [0.45, 0.7, 1.0]

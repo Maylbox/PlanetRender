@@ -131,39 +131,56 @@ public class Main {
 
             // -------- Draw atmosphere shell --------
             if (cfg.atmosphere.enabled && atmoShader != null) {
-                float[] modelAtmo = mul(model, matUniformScale(1.0f + Math.max(0, cfg.atmosphere.thicknessPct)));
+                float shellScale = 1.0f + Math.max(0, cfg.atmosphere.thicknessPct);
+                float[] modelAtmo = mul(model, matUniformScale(shellScale));
 
                 atmoShader.use();
                 setMat4(atmoShader.id(), "uProj",  proj);
                 setMat4(atmoShader.id(), "uView",  view);
                 setMat4(atmoShader.id(), "uModel", modelAtmo);
-                glUniform3f(glGetUniformLocation(atmoShader.id(), "uCamPos"), cam.x, cam.y, cam.z);
-                glUniform3f(glGetUniformLocation(atmoShader.id(), "uLightDir"), 0.3f, 0.6f, -0.7f);
 
+                // ---- set ALL uniforms before any draw ----
+                glUniform3f(glGetUniformLocation(atmoShader.id(),"uCamPos"), cam.x, cam.y, cam.z);
+                glUniform3f(glGetUniformLocation(atmoShader.id(),"uLightDir"), 0.3f, 0.6f, -0.7f);
+
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uPlanetRadius"), cfg.baseRadius);
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uShellRadius"),  cfg.baseRadius * shellScale);
+
+// you MUST set these (the frag uses them)
                 float[] ac = cfg.atmosphere.color;
-                glUniform3f(glGetUniformLocation(atmoShader.id(), "uAtmoColor"), ac[0], ac[1], ac[2]);
-                glUniform1f(glGetUniformLocation(atmoShader.id(), "uAtmoIntensity"), cfg.atmosphere.intensity);
-                glUniform1f(glGetUniformLocation(atmoShader.id(), "uAtmoPower"),     cfg.atmosphere.power);
+                glUniform3f(glGetUniformLocation(atmoShader.id(),"uAtmoColor"), ac[0], ac[1], ac[2]);
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uAtmoIntensity"), cfg.atmosphere.intensity);
 
-                // --- RIM GLOW (as you have) ---
+// optional tunables
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uHazeBoost"), 1.3f);
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uRayleighSigma"), 0.8f);
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uMieSigma"),      1.5f);
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uAbsorption"),    0.05f);
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uScaleHeightR"),  0.15f);
+                glUniform1f(glGetUniformLocation(atmoShader.id(),"uScaleHeightM"),  0.06f);
+
+// <<< IMPORTANT: enable blending and stop depth writes for the atmosphere >>>
                 glEnable(GL_BLEND);
-                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
                 glDepthMask(false);
                 glEnable(GL_CULL_FACE);
-                glCullFace(GL_FRONT); // backfaces only
-                glUniform1i(glGetUniformLocation(atmoShader.id(), "uPass"), 0); // rim mode
+
+// PASS 0 (rim: additive, backfaces)
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                glCullFace(GL_FRONT);
+                glUniform1i(glGetUniformLocation(atmoShader.id(),"uPass"), 0);
                 sphere.draw();
 
-                // --- FRONT DISK HAZE ---
+// PASS 1 (face haze: alpha, frontfaces)
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-                glCullFace(GL_BACK); // frontfaces only
-                glUniform1i(glGetUniformLocation(atmoShader.id(), "uPass"), 1); // haze mode
+                glCullFace(GL_BACK);
+                glUniform1i(glGetUniformLocation(atmoShader.id(),"uPass"), 1);
                 sphere.draw();
 
-                // restore
+// restore
                 glDepthMask(true);
                 glDisable(GL_BLEND);
                 glCullFace(GL_BACK);
+
             }
 
             win.swap();

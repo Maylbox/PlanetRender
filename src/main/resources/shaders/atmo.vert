@@ -1,24 +1,16 @@
 #version 330 core
-layout (location=0) in vec3 aPos;
-layout (location=1) in vec3 aNormal;
-layout (location=2) in vec2 aUV;
+layout(location=0) in vec3 aPos;
+uniform mat4 uModel, uView, uProj;
 
-uniform mat4 uProj;
-uniform mat4 uView;
-uniform mat4 uModel;
-
-out vec3 vNormal;
 out vec3 vWorldPos;
-out vec2 vUV;
+out vec3 vWorldNormal;
 
-void main() {
-    vec4 world = uModel * vec4(aPos, 1.0);
-    vWorldPos = world.xyz;
+void main(){
+    vec4 w = uModel * vec4(aPos,1.0);
+    vWorldPos = w.xyz;
 
-    // Correct normal transform for non-uniform scale
-    mat3 normalMat = mat3(transpose(inverse(uModel)));
-    vNormal = normalize(normalMat * aNormal);
+    // assumes near-uniform scale on the shell; good enough for the atmo rim
+    vWorldNormal = normalize(mat3(uModel) * aPos);
 
-    vUV = aUV;
-    gl_Position = uProj * uView * world;
+    gl_Position = uProj * uView * w;
 }
