@@ -1,0 +1,12 @@
+{
+  "center": [0.0, 0.0, 0.0],
+  "baseRadius": 1.0,
+  "size": [1.0, 1.0, 1.0],
+
+  "minMarginPct": 0.15,
+  "maxDistanceMult": 12.0,
+
+  "spinDegPerSec": 45.0,
+  "spinSignFree": -1,
+  "spinSignOrbit": 1
+}
