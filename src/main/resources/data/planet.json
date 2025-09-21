@@ -10,5 +10,13 @@
   "spinSignFree": -1,
   "spinSignOrbit": -1,
 
-  "albedo": "assets/textures/mars.jpg"
+  "albedo": "assets/textures/earth.jpg",
+
+  "atmosphere": {
+    "enabled": true,
+    "thicknessPct": 0.02,
+    "intensity": 2,
+    "power": 3.5,
+    "color": [0.45, 0.7, 1.0]
+  }
 }

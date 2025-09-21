@@ -171,8 +171,8 @@ public class Mesh {
                 int d =  b + 1;
 
                 // two tris per quad
-                idx[ii++] = a; idx[ii++] = b; idx[ii++] = c;
-                idx[ii++] = c; idx[ii++] = b; idx[ii++] = d;
+                idx[ii++] = a; idx[ii++] = c; idx[ii++] = b;
+                idx[ii++] = b; idx[ii++] = c; idx[ii++] = d;
             }
         }
 

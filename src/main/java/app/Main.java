@@ -11,27 +11,20 @@ import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL20.*;
 
 public class Main {
-
-    // Follow/orbit state
-    private boolean prevO = false;
-    private boolean prevT = false;
-    private float orbitAzimuthDeg = -90f;
-    private float orbitElevationDeg = 0f;
-    private float orbitRadius = 3f;
+    private boolean prevO = false, prevT = false;
+    private float orbitAzimuthDeg = -90f, orbitElevationDeg = 0f, orbitRadius = 3f;
 
     private static final float ORBIT_YAW_SPEED_DEG = 90f;
     private static final float ORBIT_ELEV_SPEED_DEG = 60f;
-    private static final float ORBIT_ZOOM_SPEED = 3f;
-    private static final float MOUSE_ORBIT_SENS = 0.12f;
+    private static final float ORBIT_ZOOM_SPEED   = 3f;
+    private static final float MOUSE_ORBIT_SENS   = 0.12f;
 
-    public static void main(String[] args) {
-        new Main().run();
-    }
+    public static void main(String[] args) { new Main().run(); }
 
     private void run() {
         Camera cam = new Camera();
 
-        // ---- Load JSON into PlanetConfig POJO ----
+        // ---- Load config ----
         engine.config.PlanetConfig cfg;
         try {
             String json = Resources.text("data/planet.json");
@@ -41,50 +34,51 @@ public class Main {
         } catch (Exception e) {
             System.err.println("planet.json not found/invalid; using defaults. " + e);
             cfg = new engine.config.PlanetConfig();
-            cfg.center = new float[]{0f,0f,0f};
+            cfg.center = new float[]{0,0,0};
             cfg.baseRadius = 1f;
-            cfg.size = new float[]{1f,1f,1f};
+            cfg.size = new float[]{1,1,1};
             cfg.minMarginPct = 0.15f;
             cfg.maxDistanceMult = 12f;
             cfg.spinDegPerSec = 45f;
-            cfg.spinSignFree = -1;
+            cfg.spinSignFree  = -1;
             cfg.spinSignOrbit = +1;
-            // cfg.albedo can be left null to disable texturing by default
         }
 
-        // Unpack config
         final float PCX = cfg.center[0], PCY = cfg.center[1], PCZ = cfg.center[2];
-        final float SX = cfg.size[0], SY = cfg.size[1], SZ = cfg.size[2];
-
-        // Derived constraints
+        final float SX = cfg.size[0],   SY = cfg.size[1],   SZ = cfg.size[2];
         float radius = effectivePlanetRadius(cfg.baseRadius, SX, SY, SZ);
-        float minDist = radius + marginFromPct(radius, cfg.minMarginPct);
+        float minDist = radius + radius * cfg.minMarginPct;
         float maxDist = Math.max(minDist * 1.1f, radius * cfg.maxDistanceMult);
 
-        // Aim free camera at configured center
         aimFreeCameraAt(cam, PCX, PCY, PCZ);
 
         long last = System.nanoTime();
         float angle = 0f;
 
-        GLWindow win = new GLWindow(1280, 720, "PlanetRender - Bootstrap");
+        GLWindow win = new GLWindow(1280, 720, "PlanetRender");
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glEnable(GL_CULL_FACE);
+
         Mesh sphere = Mesh.uvSphere(64, 128, cfg.baseRadius);
 
-        String vsrc = Resources.text("shaders/basic.vert");
-        String fsrc = Resources.text("shaders/basic.frag");
-        Shader shader = new Shader(vsrc, fsrc);
+        Shader planetShader = new Shader(
+                Resources.text("shaders/basic.vert"),
+                Resources.text("shaders/basic.frag")
+        );
+        Shader atmoShader = null;
+        if (cfg.atmosphere.enabled) {
+            atmoShader = new Shader(
+                    Resources.text("shaders/atmo.vert"),
+                    Resources.text("shaders/atmo.frag")
+            );
+        }
 
-        // -------- LOAD ALBEDO ONCE (from JSON path) --------
         engine.gl.Texture albedo = null;
         if (cfg.albedo != null && !cfg.albedo.isBlank()) {
-            try {
-                albedo = engine.gl.Texture.load(cfg.albedo);
-                System.out.println("Loaded albedo: " + cfg.albedo);
-            } catch (Exception e) {
-                System.err.println("Could not load albedo '" + cfg.albedo + "': " + e.getMessage());
-            }
+            try { albedo = engine.gl.Texture.load(cfg.albedo); }
+            catch (Exception e) { System.err.println("Could not load albedo: " + e.getMessage()); }
         }
-        // ----------------------------------------------------
 
         while (win.isOpen()) {
             long now = System.nanoTime();
@@ -101,41 +95,109 @@ public class Main {
             glClearColor(0.06f, 0.07f, 0.09f, 1f);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-            shader.use();
+            float[] proj  = cam.projMatrix(win.width(), win.height());
+            float[] view  = cam.viewMatrix();
+            float[] model = mul(mul(matTranslate(PCX, PCY, PCZ), matRotateY(angle)), matScale(SX, SY, SZ));
 
-            // matrices
-            float[] proj = cam.projMatrix(win.width(), win.height());
-            float[] view = cam.viewMatrix();
-            float[] model = matRotateY(angle);
+            // -------- Draw solid planet --------
+            planetShader.use();
+            setMat4(planetShader.id(), "uProj",  proj);
+            setMat4(planetShader.id(), "uView",  view);
+            setMat4(planetShader.id(), "uModel", model);
+            setVec3(planetShader.id(), "uCamPos", cam.x, cam.y, cam.z);
+            setVec3(planetShader.id(), "uLightDir", 0.3f, 0.6f, -0.7f);
+            setVec3(planetShader.id(), "uLightColor", 1f, 1f, 1f);
+            glUniform1f(glGetUniformLocation(planetShader.id(), "uLightIntensity"), 1.0f);
 
-            setMat4(shader.id(), "uProj", proj);
-            setMat4(shader.id(), "uView", view);
-            setMat4(shader.id(), "uModel", model);
-
-            // lighting
-            setVec3(shader.id(), "uCamPos", cam.x, cam.y, cam.z);
-            setVec3(shader.id(), "uLightDir", 0.3f, 0.6f, -0.7f);
-            setVec3(shader.id(), "uLightColor", 1f, 1f, 1f);
-            glUniform1f(glGetUniformLocation(shader.id(), "uLightIntensity"), 1.0f);
-
-            // texturing (no reload – just bind & set the sampler)
-            boolean useTex = (albedo != null);
-            glUniform1i(glGetUniformLocation(shader.id(), "uUseTexture"), useTex ? 1 : 0);
-            if (useTex) {
-                glUniform1i(glGetUniformLocation(shader.id(), "uAlbedo"), 0); // sampler to unit 0
+            if (albedo != null) {
+                glUniform1i(glGetUniformLocation(planetShader.id(), "uUseTexture"), 1);
+                glUniform1i(glGetUniformLocation(planetShader.id(), "uAlbedo"), 0);
                 albedo.bind(0);
+            } else {
+                glUniform1i(glGetUniformLocation(planetShader.id(), "uUseTexture"), 0);
             }
 
+            // Solid draw: back-face culling ON, depth write ON, blending OFF
+            glDisable(GL_BLEND);
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(true);
+            glEnable(GL_CULL_FACE);
+
+            glFrontFace(GL_CCW);
+            glCullFace(GL_BACK);
+
             sphere.draw();
+
+
+            // -------- Draw atmosphere shell --------
+            if (cfg.atmosphere.enabled && atmoShader != null) {
+                float[] modelAtmo = mul(model, matUniformScale(1.0f + Math.max(0, cfg.atmosphere.thicknessPct)));
+
+                atmoShader.use();
+                setMat4(atmoShader.id(), "uProj",  proj);
+                setMat4(atmoShader.id(), "uView",  view);
+                setMat4(atmoShader.id(), "uModel", modelAtmo);
+                glUniform3f(glGetUniformLocation(atmoShader.id(), "uCamPos"), cam.x, cam.y, cam.z);
+                glUniform3f(glGetUniformLocation(atmoShader.id(), "uLightDir"), 0.3f, 0.6f, -0.7f);
+
+                float[] ac = cfg.atmosphere.color;
+                glUniform3f(glGetUniformLocation(atmoShader.id(), "uAtmoColor"), ac[0], ac[1], ac[2]);
+                glUniform1f(glGetUniformLocation(atmoShader.id(), "uAtmoIntensity"), cfg.atmosphere.intensity);
+                glUniform1f(glGetUniformLocation(atmoShader.id(), "uAtmoPower"),     cfg.atmosphere.power);
+
+                // --- RIM GLOW (as you have) ---
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                glDepthMask(false);
+                glEnable(GL_CULL_FACE);
+                glCullFace(GL_FRONT); // backfaces only
+                glUniform1i(glGetUniformLocation(atmoShader.id(), "uPass"), 0); // rim mode
+                sphere.draw();
+
+                // --- FRONT DISK HAZE ---
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                glCullFace(GL_BACK); // frontfaces only
+                glUniform1i(glGetUniformLocation(atmoShader.id(), "uPass"), 1); // haze mode
+                sphere.draw();
+
+                // restore
+                glDepthMask(true);
+                glDisable(GL_BLEND);
+                glCullFace(GL_BACK);
+            }
 
             win.swap();
             win.poll();
         }
 
         sphere.delete();
-        shader.delete();
+        planetShader.delete();
+        if (atmoShader != null) atmoShader.delete();
         if (albedo != null) albedo.delete();
         win.destroy();
+    }
+
+    // --- matrix helpers (unchanged) ---
+    private static float[] matTranslate(float x, float y, float z) {
+        return new float[]{1,0,0,0, 0,1,0,0, 0,0,1,0, x,y,z,1};
+    }
+    private static float[] matScale(float sx, float sy, float sz) {
+        return new float[]{sx,0,0,0, 0,sy,0,0, 0,0,sz,0, 0,0,0,1};
+    }
+    private static float[] matUniformScale(float s) {
+        return new float[]{s,0,0,0, 0,s,0,0, 0,0,s,0, 0,0,0,1};
+    }
+    private static float[] matRotateY(float deg) {
+        double r = Math.toRadians(deg);
+        float c = (float)Math.cos(r), s = (float)Math.sin(r);
+        return new float[]{c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1};
+    }
+    private static float[] mul(float[] a, float[] b) {
+        float[] r = new float[16];
+        for (int c=0;c<4;c++)
+            for (int r0=0;r0<4;r0++)
+                r[c*4+r0] = a[0*4+r0]*b[c*4+0] + a[1*4+r0]*b[c*4+1] + a[2*4+r0]*b[c*4+2] + a[3*4+r0]*b[c*4+3];
+        return r;
     }
 
     private void handleInput(GLWindow w, Camera c, float dt, float minDist, float maxDist,
@@ -324,18 +386,6 @@ public class Main {
 
     private static float marginFromPct(float radius, float pct) {
         return radius * pct;
-    }
-
-    // --- tiny math/uniform helpers (column-major uploads) ---
-    private static float[] matRotateY(float deg) {
-        double r = Math.toRadians(deg);
-        float c = (float)Math.cos(r), s = (float)Math.sin(r);
-        return new float[]{
-                c,0,-s,0,
-                0,1, 0,0,
-                s,0, c,0,
-                0,0, 0,1
-        };
     }
 
     private static void setMat4(int prog, String name, float[] m) {
