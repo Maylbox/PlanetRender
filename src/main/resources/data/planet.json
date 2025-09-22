@@ -6,17 +6,17 @@
   "minMarginPct": 0.15,
   "maxDistanceMult": 12.0,
 
-  "spinDegPerSec": 45.0,
+  "spinDegPerSec": 99,
   "spinSignFree": -1,
   "spinSignOrbit": -1,
 
-  "albedo": "assets/textures/earth.jpg",
+  "albedo": "assets/textures/mars.jpg",
 
   "atmosphere": {
     "enabled": true,
-    "thicknessPct": 0.07,
-    "intensity": 2,
-    "power": 3.5,
-    "color": [0.45, 0.7, 1.0]
+    "thicknessPct": 0.30,
+    "intensity": 0.4,
+    "power": 1.5,
+    "color": [0.0, 0.0, 0.0]
   }
 }

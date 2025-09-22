@@ -25,27 +25,42 @@ public class PlanetConfig {
         public float[] color;         // [r,g,b] 0..1
     }
 
+    public static class Lighting {
+        public float[] direction = {1f, 0f, 0f};
+        public float[] color     = {1f, 1f, 1f};
+        public float   intensity = 2.0f;
+    }
+
+    public Lighting lighting = new Lighting();
+
     public void applyDefaultsIfNeeded() {
         if (center == null || center.length != 3) center = new float[]{0,0,0};
         if (size   == null || size.length   != 3) size   = new float[]{1,1,1};
         if (baseRadius <= 0) baseRadius = 1.0f;
 
-        if (minMarginPct <= 0)   minMarginPct   = 0.15f;
-        if (maxDistanceMult <= 0) maxDistanceMult = 12f;
+        if (minMarginPct   <= 0)  minMarginPct   = 0.15f;
+        if (maxDistanceMult <= 1) maxDistanceMult = 12f;
 
         if (spinDegPerSec == 0) spinDegPerSec = 45f;
-        if (spinSignFree == 0)  spinSignFree  = -1;
+        if (spinSignFree  == 0) spinSignFree  = -1;
         if (spinSignOrbit == 0) spinSignOrbit = +1;
 
-        if (albedo == null || albedo.isBlank()) albedo = "";
+        if (albedo == null) albedo = "";
 
         if (atmosphere == null) atmosphere = new Atmosphere();
-        if (atmosphere.color == null || atmosphere.color.length != 3) atmosphere.color = new float[]{0.45f, 0.7f, 1.0f};
-        if (atmosphere.power <= 0)      atmosphere.power = 3.0f;
-        if (atmosphere.intensity <= 0)  atmosphere.intensity = 1.0f;
-        // modest default thickness
-        if (atmosphere.thicknessPct <= 0) atmosphere.thicknessPct = 0.02f;
-        // default disabled unless user opts in
-        // (leave atmosphere.enabled as-is)
+        if (atmosphere.color == null || atmosphere.color.length != 3)
+            atmosphere.color = new float[]{0.45f, 0.7f, 1.0f};
+
+        // clamps/sanity
+        atmosphere.color[0] = clamp01(atmosphere.color[0]);
+        atmosphere.color[1] = clamp01(atmosphere.color[1]);
+        atmosphere.color[2] = clamp01(atmosphere.color[2]);
+
+        if (atmosphere.power <= 0)     atmosphere.power = 3.0f;
+        if (atmosphere.intensity < 0)  atmosphere.intensity = 0.0f;
+        if (atmosphere.thicknessPct < 0) atmosphere.thicknessPct = 0.02f;
+        if (atmosphere.thicknessPct > 1.0f) atmosphere.thicknessPct = 1.0f; // optional cap
     }
+
+    private static float clamp01(float x){ return x < 0f ? 0f : (x > 1f ? 1f : x); }
 }
