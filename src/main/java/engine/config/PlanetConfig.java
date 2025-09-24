@@ -25,6 +25,27 @@ public class PlanetConfig {
         public float[] color;         // [r,g,b] 0..1
     }
 
+    public static class Clouds {
+        public boolean enabled = false;
+
+        // Per-layer settings
+        public static class Layer {
+            public float   altitudePct   = 0.015f;        // +% of planet radius above surface (e.g. 1.5%)
+            public float   thicknessPct  = 0.002f;        // shell thickness – mostly visual, can stay small
+            public float[] color         = {1f, 1f, 1f};  // tint (multiply)
+            public float   opacity       = 0.6f;          // 0..1
+            public float[] scrollUV      = {0.01f, 0.0f}; // movement in lat-long UV / sec
+            public float   rotationDegPS = 0f;            // optional extra spin around Y / sec
+            public float   coverage      = 0.5f;          // 0..1 density threshold (procedural path)
+            public float   noiseScale    = 2.5f;          // procedural noise scale (procedural path)
+            public String  texture       = "";            // optional albedo (rgba) for clouds; empty = procedural
+            public float   storminess    = 0.0f;          // 0 calm … 1 violent (affects appearance/speed)
+        }
+
+        public Layer[] layers = new Layer[]{ new Layer() };
+    }
+    public Clouds clouds = new Clouds();
+
     public static class Lighting {
         public float[] direction = {1f, 0f, 0f};
         public float[] color     = {1f, 1f, 1f};
@@ -60,6 +81,17 @@ public class PlanetConfig {
         if (atmosphere.intensity < 0)  atmosphere.intensity = 0.0f;
         if (atmosphere.thicknessPct < 0) atmosphere.thicknessPct = 0.02f;
         if (atmosphere.thicknessPct > 1.0f) atmosphere.thicknessPct = 1.0f; // optional cap
+
+        if (clouds == null) clouds = new Clouds();
+        // clamp/sanitize layers
+        for (var L : clouds.layers) {
+            if (L.color == null || L.color.length != 3) L.color = new float[]{1f,1f,1f};
+            L.opacity      = Math.max(0f, Math.min(1f, L.opacity));
+            L.coverage     = Math.max(0f, Math.min(1f, L.coverage));
+            L.noiseScale   = Math.max(0.1f, L.noiseScale);
+            L.altitudePct  = Math.max(0.001f, L.altitudePct);
+            L.thicknessPct = Math.max(0.0f,   L.thicknessPct);
+        }
     }
 
     private static float clamp01(float x){ return x < 0f ? 0f : (x > 1f ? 1f : x); }

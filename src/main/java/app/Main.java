@@ -50,7 +50,8 @@ public class Main {
                 gizmoShader,
                 sphere,
                 atmoSettings,
-                cfg.lighting
+                cfg.lighting,
+                cfg.clouds
         );
 
         // Build scene planet
@@ -78,6 +79,8 @@ public class Main {
             long now = System.nanoTime();
             float dt = (now - last) / 1_000_000_000f;
             last = now;
+
+            renderer.advanceTime(dt);
 
             float minDist = planet.worldRadius() * (1f + cfg.minMarginPct);
             float maxDist = Math.max(minDist * 1.1f, planet.worldRadius() * cfg.maxDistanceMult);

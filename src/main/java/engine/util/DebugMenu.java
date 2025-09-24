@@ -9,6 +9,7 @@ import org.lwjgl.stb.STBEasyFont;
 import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 
+import static java.lang.Math.*;
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL15.*;
 import static org.lwjgl.opengl.GL20.*;
@@ -20,6 +21,10 @@ public class DebugMenu {
 
     private boolean visible = true;
     private int selected = 0;
+
+    // ---- we edit angles now ----
+    private float azDeg; // 0..360 around Y (0=+X, 90=+Z)
+    private float elDeg; // -90..+90 (0=equator, +90=north pole)
 
     // ---- panel + text rendering (modern GL) ----
     private final int vao;
@@ -47,7 +52,7 @@ public class DebugMenu {
     """;
 
     private static final String[] ITEMS = new String[]{
-            "Light Dir X","Light Dir Y","Light Dir Z",
+            "Light Azimuth (deg)","Light Elevation (deg)",
             "Light Color R","Light Color G","Light Color B",
             "Light Intensity",
             "Atmo Enabled",
@@ -68,6 +73,11 @@ public class DebugMenu {
         clamp01(atmo.color);
         atmo.thicknessPct = Math.max(0f, atmo.thicknessPct);
         atmo.intensity    = Math.max(0f, atmo.intensity);
+
+        // initialize angles from current direction
+        dirToAngles(lighting.direction, outAzEl);
+        this.azDeg = outAzEl[0];
+        this.elDeg = outAzEl[1];
 
         vao = glGenVertexArrays();
         vbo = glGenBuffers();
@@ -115,7 +125,13 @@ public class DebugMenu {
         atmo.enabled = !atmo.enabled;
     }
 
-    public void renormalizeLightDir() { normalize(lighting.direction); }
+    public void renormalizeLightDir() {
+        // Re-derive angles from the current vector (if user typed crazy stuff elsewhere)
+        normalize(lighting.direction);
+        dirToAngles(lighting.direction, outAzEl);
+        azDeg = outAzEl[0];
+        elDeg = outAzEl[1];
+    }
 
     // ---------- Edit mode (type-in value) ----------
     public boolean isEditing() { return editMode; }
@@ -167,8 +183,8 @@ public class DebugMenu {
 
         // Panel geometry
         float px = 10, py = 10;
-        float pw = Math.max(460, viewportWidth * 0.33f);
-        float ph = 260;
+        float pw = Math.max(520, viewportWidth * 0.36f);
+        float ph = 300;
 
         // Build text
         String txt = buildText();
@@ -235,7 +251,6 @@ public class DebugMenu {
         rect.flip();
 
         // simple color via uColor (we want alpha too, so tint text pass uses blending)
-        // Do a color pass with low RGB + blend to simulate alpha
         glUniform3f(uColorLoc, r, g, b);
         glBufferData(GL_ARRAY_BUFFER, rect, GL_STREAM_DRAW);
         glVertexAttribPointer(0, 2, GL_FLOAT, false, 2 * Float.BYTES, 0L);
@@ -267,22 +282,29 @@ public class DebugMenu {
 
     private String buildText() {
         StringBuilder sb = new StringBuilder();
-        sb.append("F1: Toggle  |  Up/Down: Select  |  Left/Right: Change  |  Shift/Ctrl: big/tiny  |  H: Toggle Atmo  |  R: Normalize\n");
+        sb.append("F1: Toggle  |  Up/Down: Select  |  Left/Right: Change  |  Shift/Ctrl: big/tiny  |  H: Toggle Atmo  |  R: Sync Angles\n");
         sb.append("Enter: type value  |  digits/-/. to edit  |  Backspace  |  Enter=commit  Esc=cancel\n\n");
 
-        append(sb, 0,  "Light Dir X", lighting.direction[0]);
-        append(sb, 1,  "Light Dir Y", lighting.direction[1]);
-        append(sb, 2,  "Light Dir Z", lighting.direction[2]);
-        append(sb, 3,  "Light Color R", lighting.color[0]);
-        append(sb, 4,  "Light Color G", lighting.color[1]);
-        append(sb, 5,  "Light Color B", lighting.color[2]);
-        append(sb, 6,  "Light Intensity", lighting.intensity);
-        append(sb, 7,  "Atmo Enabled", atmo.enabled ? 1f : 0f);
-        append(sb, 8,  "Atmo Color R", atmo.color[0]);
-        append(sb, 9,  "Atmo Color G", atmo.color[1]);
-        append(sb, 10, "Atmo Color B", atmo.color[2]);
-        append(sb, 11, "Atmo ThicknessPct", atmo.thicknessPct);
-        append(sb, 12, "Atmo Intensity", atmo.intensity);
+        // angles
+        append(sb, 0,  "Light Azimuth (deg)", azDeg);
+        append(sb, 1,  "Light Elevation (deg)", elDeg);
+
+        // readback (normalized vector)
+        float[] d = lighting.direction.clone();
+        normalize(d);
+        sb.append(String.format("  Light Dir Readback   : (%.3f, %.3f, %.3f)%n%n", d[0], d[1], d[2]));
+
+        // rest
+        append(sb, 2,  "Light Color R", lighting.color[0]);
+        append(sb, 3,  "Light Color G", lighting.color[1]);
+        append(sb, 4,  "Light Color B", lighting.color[2]);
+        append(sb, 5,  "Light Intensity", lighting.intensity);
+        append(sb, 6,  "Atmo Enabled", atmo.enabled ? 1f : 0f);
+        append(sb, 7,  "Atmo Color R", atmo.color[0]);
+        append(sb, 8,  "Atmo Color G", atmo.color[1]);
+        append(sb, 9,  "Atmo Color B", atmo.color[2]);
+        append(sb, 10, "Atmo ThicknessPct", atmo.thicknessPct);
+        append(sb, 11, "Atmo Intensity", atmo.intensity);
 
         if (editMode) {
             sb.append("\n> Type value: ").append(editBuf).append("_");
@@ -292,62 +314,102 @@ public class DebugMenu {
 
     private void append(StringBuilder sb, int idx, String label, float value) {
         sb.append(idx == selected ? "> " : "  ");
-        sb.append(String.format("%-18s : %.4f%n", label, value));
+        sb.append(String.format("%-22s : %.4f%n", label, value));
     }
 
     private boolean isEditable(int idx) {
-        // all except the toggle row (7)
-        return idx != 7;
+        // all except the toggle row (6, Atmo Enabled)
+        return idx != 6;
     }
 
     private void setValueForSelected(float v) {
         switch (selected) {
-            case 0 -> lighting.direction[0] = v;
-            case 1 -> lighting.direction[1] = v;
-            case 2 -> lighting.direction[2] = v;
+            case 0 -> { // azimuth
+                azDeg = wrap360(v);
+                applyAnglesToDir();
+            }
+            case 1 -> { // elevation
+                elDeg = clamp(v, -90f, 90f);
+                applyAnglesToDir();
+            }
 
-            case 3 -> lighting.color[0] = clamp01f(v);
-            case 4 -> lighting.color[1] = clamp01f(v);
-            case 5 -> lighting.color[2] = clamp01f(v);
+            case 2 -> lighting.color[0] = clamp01f(v);
+            case 3 -> lighting.color[1] = clamp01f(v);
+            case 4 -> lighting.color[2] = clamp01f(v);
 
-            case 6 -> lighting.intensity = Math.max(0f, v);
+            case 5 -> lighting.intensity = Math.max(0f, v);
 
-            case 8  -> atmo.color[0] = clamp01f(v);
-            case 9  -> atmo.color[1] = clamp01f(v);
-            case 10 -> atmo.color[2] = clamp01f(v);
+            case 7  -> atmo.color[0] = clamp01f(v);
+            case 8  -> atmo.color[1] = clamp01f(v);
+            case 9  -> atmo.color[2] = clamp01f(v);
 
-            case 11 -> atmo.thicknessPct = Math.max(0f, v);
-            case 12 -> atmo.intensity    = Math.max(0f, v);
+            case 10 -> atmo.thicknessPct = Math.max(0f, v);
+            case 11 -> atmo.intensity    = Math.max(0f, v);
         }
     }
 
     private void applyDelta(float delta) {
         switch (selected) {
-            case 0 -> lighting.direction[0] += delta;
-            case 1 -> lighting.direction[1] += delta;
-            case 2 -> lighting.direction[2] += delta;
+            case 0 -> { // azimuth
+                azDeg = wrap360(azDeg + delta);
+                applyAnglesToDir();
+            }
+            case 1 -> { // elevation
+                elDeg = clamp(elDeg + delta, -90f, 90f);
+                applyAnglesToDir();
+            }
 
-            case 3 -> lighting.color[0] = clamp01f(lighting.color[0] + delta);
-            case 4 -> lighting.color[1] = clamp01f(lighting.color[1] + delta);
-            case 5 -> lighting.color[2] = clamp01f(lighting.color[2] + delta);
+            case 2 -> lighting.color[0] = clamp01f(lighting.color[0] + delta);
+            case 3 -> lighting.color[1] = clamp01f(lighting.color[1] + delta);
+            case 4 -> lighting.color[2] = clamp01f(lighting.color[2] + delta);
 
-            case 6 -> lighting.intensity = Math.max(0f, lighting.intensity + delta);
+            case 5 -> lighting.intensity = Math.max(0f, lighting.intensity + delta);
 
-            case 8  -> atmo.color[0] = clamp01f(atmo.color[0] + delta);
-            case 9  -> atmo.color[1] = clamp01f(atmo.color[1] + delta);
-            case 10 -> atmo.color[2] = clamp01f(atmo.color[2] + delta);
+            case 7  -> atmo.color[0] = clamp01f(atmo.color[0] + delta);
+            case 8  -> atmo.color[1] = clamp01f(atmo.color[1] + delta);
+            case 9  -> atmo.color[2] = clamp01f(atmo.color[2] + delta);
 
-            case 11 -> atmo.thicknessPct = Math.max(0f, atmo.thicknessPct + delta);
-            case 12 -> atmo.intensity    = Math.max(0f, atmo.intensity    + delta);
+            case 10 -> atmo.thicknessPct = Math.max(0f, atmo.thicknessPct + delta);
+            case 11 -> atmo.intensity    = Math.max(0f, atmo.intensity    + delta);
         }
     }
 
     // helpers
     private static void normalize(float[] v) {
-        float len = (float)Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+        float len = (float)sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
         if (len < 1e-6f) { v[0]=1; v[1]=0; v[2]=0; return; }
         v[0] /= len; v[1] /= len; v[2] /= len;
     }
     private static void clamp01(float[] c) { c[0]=clamp01f(c[0]); c[1]=clamp01f(c[1]); c[2]=clamp01f(c[2]); }
     private static float clamp01f(float x){ return (x<0f?0f:(x>1f?1f:x)); }
+    private static float clamp(float v, float lo, float hi){ return v < lo ? lo : (v > hi ? hi : v); }
+    private static float wrap360(float a){ a = a % 360f; if (a < 0f) a += 360f; return a; }
+
+    // convert current angles -> lighting.direction (unit)
+    private void applyAnglesToDir(){
+        double az = toRadians(azDeg);
+        double el = toRadians(elDeg);
+        float x = (float)(cos(el) * cos(az));
+        float y = (float)(sin(el));
+        float z = (float)(cos(el) * sin(az));
+        lighting.direction[0] = x;
+        lighting.direction[1] = y;
+        lighting.direction[2] = z;
+    }
+
+    // convert direction -> angles, returns [azDeg, elDeg]
+    private final float[] outAzEl = new float[2];
+    private static void dirToAngles(float[] d, float[] outAzEl){
+        float[] v = d.clone();
+        float len = (float)sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]);
+        if (len < 1e-6f) { v[0]=1; v[1]=0; v[2]=0; len=1f; }
+        v[0]/=len; v[1]/=len; v[2]/=len;
+
+        double el = asin(v[1]);                 // [-pi/2, +pi/2]
+        double az = atan2(v[2], v[0]);          // [-pi, +pi]
+        float azDeg = (float)toDegrees(az);
+        if (azDeg < 0f) azDeg += 360f;
+        outAzEl[0] = azDeg;
+        outAzEl[1] = (float)toDegrees(el);
+    }
 }

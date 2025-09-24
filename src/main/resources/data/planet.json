@@ -6,7 +6,7 @@
   "minMarginPct": 0.15,
   "maxDistanceMult": 12.0,
 
-  "spinDegPerSec": 99,
+  "spinDegPerSec": 10,
   "spinSignFree": -1,
   "spinSignOrbit": -1,
 
@@ -14,9 +14,51 @@
 
   "atmosphere": {
     "enabled": true,
-    "thicknessPct": 0.30,
-    "intensity": 0.4,
-    "power": 1.5,
-    "color": [0.0, 0.0, 0.0]
+    "thicknessPct": 0.02,
+    "intensity":   0.25,
+    "power":       2.5,
+    "color":       [0.88, 0.55, 0.28]
+  },
+
+  "clouds": {
+    "enabled": true,
+    "layers": [
+      {
+        "altitudePct": 0.020,
+        "thicknessPct": 0.0015,
+        "color": [0.95, 0.97, 1.0],
+        "opacity": 0.18,
+        "scrollUV": [0.002, 0.000],
+        "rotationDegPS": 0.2,
+        "coverage": 0.80,
+        "noiseScale": 5.5,
+        "texture": "",
+        "storminess": 0.10
+      },
+      {
+        "altitudePct": 0.030,
+        "thicknessPct": 0.001,
+        "color": [0.96, 0.98, 1.0],
+        "opacity": 0.12,
+        "scrollUV": [-0.001, 0.0005],
+        "rotationDegPS": 0.1,
+        "coverage": 0.85,
+        "noiseScale": 7.5,
+        "texture": "",
+        "storminess": 0.05
+      }
+      ,{
+        "altitudePct": 0.006,
+        "thicknessPct": 0.003,
+        "color": [1.0, 0.78, 0.50],
+        "opacity": 0.10,
+        "scrollUV": [0.010, 0.004],
+        "rotationDegPS": 0.5,
+        "coverage": 0.40,
+        "noiseScale": 2.0,
+        "texture": "",
+        "storminess": 0.70
+      }
+    ]
   }
 }

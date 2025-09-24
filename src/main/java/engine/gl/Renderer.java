@@ -4,6 +4,7 @@ import engine.config.PlanetConfig;
 import engine.scene.Camera;
 import engine.scene.Mesh;
 import engine.scene.Planet;
+import engine.util.Resources;
 
 import static org.lwjgl.opengl.GL11.*;
 import static org.lwjgl.opengl.GL20.*;
@@ -19,10 +20,16 @@ public class Renderer {
     private final float   lightIntensity;
     private final PlanetConfig.Lighting lightingCfg;
 
+    private final CloudRenderer cloudRenderer;
+    private final PlanetConfig.Clouds cloudsCfg;
+    private float timeSec = 0f;
+
     public Renderer(Shader planetShader, Shader atmoShader, Shader gizmoShader,
                     Mesh sphere,
                     AtmosphereRenderer.Settings atmoSettings,
-                    PlanetConfig.Lighting lightingCfg) {
+                    PlanetConfig.Lighting lightingCfg,
+                    PlanetConfig.Clouds cloudsCfg) {
+
         this.planetShader = planetShader;
         this.atmoShader   = atmoShader;
         this.gizmo        = new GizmoRenderer(gizmoShader);
@@ -32,9 +39,18 @@ public class Renderer {
         this.lightDir       = lightingCfg.direction.clone();
         this.lightColor     = lightingCfg.color.clone();
         this.lightIntensity = lightingCfg.intensity;
-        this.lightingCfg  = lightingCfg;
+        this.lightingCfg    = lightingCfg;
+
+        this.cloudsCfg = cloudsCfg;
+        this.cloudRenderer = (cloudsCfg != null)
+                ? new CloudRenderer(
+                new Shader(Resources.text("shaders/clouds.vert"),
+                        Resources.text("shaders/clouds.frag")),
+                sphere)
+                : null;
     }
 
+    public void advanceTime(float dt){ timeSec += Math.max(0f, dt); }
 
     public void drawPlanet(Planet p, float[] proj, float[] view,
                            float angleDeg, int width, int height,
@@ -43,7 +59,6 @@ public class Renderer {
         float[] model = mul(mul(matTranslate(p.cx,p.cy,p.cz), matRotateY(angleDeg)),
                 matUniformScale(p.uniformScale));
 
-        // Solid planet
         planetShader.use();
         setMat4(planetShader.id(),"uProj", proj);
         setMat4(planetShader.id(),"uView", view);
@@ -55,7 +70,6 @@ public class Renderer {
                 lightingCfg.color[0], lightingCfg.color[1], lightingCfg.color[2]);
         glUniform1f(glGetUniformLocation(planetShader.id(),"uLightIntensity"),
                 lightingCfg.intensity);
-
 
         int locUseTex = glGetUniformLocation(planetShader.id(), "uUseTexture");
         int locSampler = glGetUniformLocation(planetShader.id(), "uAlbedo");
@@ -75,17 +89,27 @@ public class Renderer {
         glCullFace(GL_BACK);
         p.mesh.draw();
 
-        // Gizmo (optional)
         float lineLen = p.worldRadius() * 1.3f;
         gizmo.draw(proj, view, p.cx,p.cy,p.cz, lightDir[0],lightDir[1],lightDir[2], lineLen);
 
-        // Atmosphere from config
+        if (cloudRenderer != null && cloudsCfg != null && cloudsCfg.enabled) {
+            cloudRenderer.draw(
+                    p, proj, view, model,
+                    cam.x, cam.y, cam.z,
+                    cloudsCfg, timeSec,
+                    lightingCfg.direction[0], lightingCfg.direction[1], lightingCfg.direction[2],
+                    lightingCfg.color[0],     lightingCfg.color[1],     lightingCfg.color[2],
+                    lightingCfg.intensity
+            );
+        }
+
         if (atmoRenderer != null && atmoSettings != null && atmoSettings.enabled) {
             atmoRenderer.draw(p, proj, view, model, cam.x, cam.y, cam.z,
                     lightingCfg.direction[0], lightingCfg.direction[1], lightingCfg.direction[2],
                     atmoSettings);
         }
     }
+
 
 
     public void delete(){ gizmo.delete(); }
